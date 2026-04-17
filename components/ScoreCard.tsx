@@ -1,7 +1,5 @@
 "use client";
 
-import { Progress } from "@/components/ui/progress";
-import { Badge } from "@/components/ui/badge";
 import type { EvaluationResult } from "@/lib/types";
 
 interface ScoreCardProps {
@@ -15,65 +13,70 @@ function scoreColor(score: number) {
   return "text-red-400";
 }
 
-function scoreLabel(score: number) {
-  if (score >= 75) return "PASS";
-  if (score >= 50) return "WARN";
-  return "FAIL";
+function barColor(score: number) {
+  if (score >= 75) return "bg-green-500";
+  if (score >= 50) return "bg-yellow-500";
+  return "bg-red-500";
 }
 
-function scoreBadgeVariant(score: number): "default" | "secondary" | "destructive" {
-  if (score >= 75) return "default";
-  if (score >= 50) return "secondary";
-  return "destructive";
-}
+const METRICS = [
+  { key: "prompt_adherence" as const, label: "Adherence" },
+  { key: "temporal_consistency" as const, label: "Temporal" },
+  { key: "physical_logic" as const, label: "Physical" },
+];
 
 export function ScoreCard({ scores, delta }: ScoreCardProps) {
-  const metrics = [
-    { label: "Prompt Adherence", value: scores.prompt_adherence },
-    { label: "Temporal Consistency", value: scores.temporal_consistency },
-    { label: "Physical Logic", value: scores.physical_logic },
-  ];
-
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <span className={`text-2xl font-bold ${scoreColor(scores.overall)}`}>
+      {/* Overall score */}
+      <div className="flex items-baseline justify-between">
+        <div className="flex items-baseline gap-2">
+          <span className={`text-2xl font-bold font-mono ${scoreColor(scores.overall)}`}>
             {scores.overall}
           </span>
-          <Badge variant={scoreBadgeVariant(scores.overall)} className="text-xs">
-            {scoreLabel(scores.overall)}
-          </Badge>
+          <span className="text-xs text-white/30">/ 100</span>
         </div>
         {delta != null && (
           <span
-            className={`text-sm font-semibold ${
+            className={`text-xs font-semibold font-mono ${
               delta >= 0 ? "text-green-400" : "text-red-400"
             }`}
           >
             {delta >= 0 ? "+" : ""}
-            {delta} pts
+            {delta}
           </span>
         )}
       </div>
 
+      {/* Metric bars */}
       <div className="space-y-2">
-        {metrics.map((m) => (
-          <div key={m.label}>
-            <div className="flex justify-between text-xs text-muted-foreground mb-1">
-              <span>{m.label}</span>
-              <span className={scoreColor(m.value)}>{m.value}</span>
+        {METRICS.map((m) => {
+          const val = scores[m.key];
+          return (
+            <div key={m.key}>
+              <div className="flex justify-between items-center mb-1">
+                <span className="text-[10px] text-white/30">{m.label}</span>
+                <span className={`text-[10px] font-mono font-semibold ${scoreColor(val)}`}>
+                  {val}
+                </span>
+              </div>
+              <div className="h-1 rounded-full bg-white/5 overflow-hidden">
+                <div
+                  className={`h-full rounded-full transition-all duration-500 ${barColor(val)}`}
+                  style={{ width: `${val}%` }}
+                />
+              </div>
             </div>
-            <Progress value={m.value} className="h-1.5" />
-          </div>
-        ))}
+          );
+        })}
       </div>
 
+      {/* Failure reasons */}
       {scores.failure_reasons.length > 0 && (
-        <div className="space-y-1">
-          {scores.failure_reasons.map((reason, i) => (
-            <p key={i} className="text-xs text-red-400/80 leading-snug">
-              • {reason}
+        <div className="space-y-1 pt-1">
+          {scores.failure_reasons.map((r, i) => (
+            <p key={i} className="text-[10px] text-red-400/70 leading-snug">
+              · {r}
             </p>
           ))}
         </div>

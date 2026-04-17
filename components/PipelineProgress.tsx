@@ -1,18 +1,12 @@
 "use client";
 
-import { Badge } from "@/components/ui/badge";
-import { Loader2, Wand2, Video, Search, CheckCircle2 } from "lucide-react";
+import { Loader2, CheckCircle2, Video, Search, Wand2 } from "lucide-react";
 import type { PipelineEvent } from "@/lib/types";
 
 interface Step {
   label: string;
-  status: "pending" | "active" | "done";
+  status: "active" | "done";
   icon: "generate" | "evaluate" | "heal";
-  iteration: number;
-}
-
-interface PipelineProgressProps {
-  events: PipelineEvent[];
 }
 
 function getSteps(events: PipelineEvent[]): Step[] {
@@ -21,10 +15,9 @@ function getSteps(events: PipelineEvent[]): Step[] {
   for (const ev of events) {
     if (ev.type === "iteration_start" && ev.iteration != null) {
       steps.push({
-        label: `Iteration ${ev.iteration}: Generating`,
+        label: `Iteration ${ev.iteration}: Generating with Seedance 2.0`,
         status: "active",
         icon: "generate",
-        iteration: ev.iteration,
       });
     }
     if (ev.type === "evaluating") {
@@ -34,7 +27,6 @@ function getSteps(events: PipelineEvent[]): Step[] {
         label: `Iteration ${ev.iteration}: Evaluating with Seed 2.0`,
         status: "active",
         icon: "evaluate",
-        iteration: ev.iteration ?? 0,
       });
     }
     if (ev.type === "healing") {
@@ -42,67 +34,58 @@ function getSteps(events: PipelineEvent[]): Step[] {
       if (last) last.status = "done";
       if (ev.repairedPrompt) {
         steps.push({
-          label: `Score below threshold — healing prompt`,
+          label: "Prompt repaired — preparing retry",
           status: "done",
           icon: "heal",
-          iteration: ev.iteration ?? 0,
         });
       } else {
         steps.push({
-          label: `Analyzing failures — repairing prompt`,
+          label: "Score below threshold — rewriting prompt",
           status: "active",
           icon: "heal",
-          iteration: ev.iteration ?? 0,
         });
       }
     }
     if (ev.type === "done" || ev.type === "iteration_done") {
       const last = steps[steps.length - 1];
-      if (last && last.status === "active") last.status = "done";
+      if (last?.status === "active") last.status = "done";
     }
   }
 
   return steps;
 }
 
-const iconMap = {
-  generate: Video,
-  evaluate: Search,
-  heal: Wand2,
-};
+const ICONS = { generate: Video, evaluate: Search, heal: Wand2 };
 
-export function PipelineProgress({ events }: PipelineProgressProps) {
+export function PipelineProgress({ events }: { events: PipelineEvent[] }) {
   const steps = getSteps(events);
-
   if (steps.length === 0) return null;
 
   return (
     <div className="space-y-2">
       {steps.map((step, i) => {
-        const Icon = iconMap[step.icon];
+        const Icon = ICONS[step.icon];
         return (
-          <div key={i} className="flex items-center gap-3 text-sm">
-            {step.status === "active" ? (
-              <Loader2 className="h-4 w-4 text-primary animate-spin shrink-0" />
-            ) : step.status === "done" ? (
-              <CheckCircle2 className="h-4 w-4 text-green-500 shrink-0" />
-            ) : (
-              <Icon className="h-4 w-4 text-muted-foreground shrink-0" />
-            )}
+          <div key={i} className="flex items-center gap-3">
+            <div className="shrink-0">
+              {step.status === "active" ? (
+                <Loader2 className="h-3.5 w-3.5 text-green-400 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-3.5 w-3.5 text-green-500" />
+              )}
+            </div>
+            <Icon
+              className={`h-3.5 w-3.5 shrink-0 ${
+                step.status === "active" ? "text-white/40" : "text-white/20"
+              }`}
+            />
             <span
-              className={
-                step.status === "active"
-                  ? "text-foreground"
-                  : "text-muted-foreground"
-              }
+              className={`text-xs ${
+                step.status === "active" ? "text-white/80" : "text-white/30"
+              }`}
             >
               {step.label}
             </span>
-            {step.status === "active" && (
-              <Badge variant="secondary" className="text-xs ml-auto shrink-0">
-                Running
-              </Badge>
-            )}
           </div>
         );
       })}
