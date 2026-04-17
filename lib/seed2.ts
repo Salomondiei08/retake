@@ -12,7 +12,7 @@ interface ChatMessage {
     | string
     | Array<
         | { type: "text"; text: string }
-        | { type: "image_url"; image_url: { url: string } }
+        | { type: "video_url"; video_url: { url: string } }
       >;
 }
 
@@ -35,7 +35,6 @@ async function chatCompletion(
     body: JSON.stringify({
       model,
       messages,
-      response_format: { type: "json_object" },
     }),
   });
 
@@ -82,8 +81,8 @@ repair_suggestions: actionable prompt improvements that would fix each issue (ma
           text: `Original prompt: "${originalPrompt}"\n\nEvaluate this video:`,
         },
         {
-          type: "image_url",
-          image_url: { url: videoUrl },
+          type: "video_url",
+          video_url: { url: videoUrl },
         },
       ],
     },
@@ -92,7 +91,7 @@ repair_suggestions: actionable prompt improvements that would fix each issue (ma
   const raw = await chatCompletion(messages, VISION_MODEL);
 
   try {
-    const parsed = JSON.parse(raw) as EvaluationResult;
+    const parsed = JSON.parse(extractJson(raw)) as EvaluationResult;
     parsed.overall = Math.round(
       parsed.prompt_adherence * 0.4 +
         parsed.temporal_consistency * 0.35 +
@@ -138,10 +137,18 @@ Write an improved prompt that addresses these issues:`,
   const raw = await chatCompletion(messages, TEXT_MODEL);
 
   try {
-    const parsed = JSON.parse(raw) as { improved_prompt: string };
+    const parsed = JSON.parse(extractJson(raw)) as { improved_prompt: string };
     return parsed.improved_prompt ?? originalPrompt;
   } catch {
     const match = raw.match(/"improved_prompt"\s*:\s*"([^"]+)"/);
     return match?.[1] ?? originalPrompt;
   }
+}
+
+function extractJson(text: string): string {
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (fenced) return fenced[1].trim();
+  const braced = text.match(/(\{[\s\S]*\})/);
+  if (braced) return braced[1].trim();
+  return text.trim();
 }
