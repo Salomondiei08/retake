@@ -2,8 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Zap, Wand2, FlaskConical, ArrowLeft, History, LogOut, Layers } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { Wand2, FlaskConical, ArrowLeft, History, LogOut, Layers } from "lucide-react";
 import { signOut, useSession } from "next-auth/react";
 
 const NAV = [
@@ -38,77 +37,178 @@ export function Sidebar() {
   const { data: session } = useSession();
 
   return (
-    <aside className="w-60 shrink-0 flex flex-col border-r border-border bg-sidebar">
+    <aside
+      style={{
+        width: 224,
+        flexShrink: 0,
+        display: "flex",
+        flexDirection: "column",
+        borderRight: "1px solid var(--line)",
+        background: "var(--bg-1)",
+        height: "100%",
+      }}
+    >
       {/* Logo */}
-      <div className="px-5 py-5 border-b border-border">
-        <div className="flex items-center gap-3">
-          <div className="h-9 w-9 rounded-xl bg-primary/15 border border-primary/30 flex items-center justify-center shrink-0">
-            <Zap className="h-4.5 w-4.5 text-primary" />
-          </div>
-          <div>
-            <p className="text-base font-bold tracking-tight text-foreground">SeedTrace</p>
-            <p className="text-xs text-muted-foreground leading-none mt-0.5">AI Video DevTools</p>
-          </div>
+      <div
+        style={{
+          padding: "20px 20px 16px",
+          borderBottom: "1px solid var(--line)",
+          display: "flex",
+          alignItems: "center",
+          gap: 12,
+        }}
+      >
+        <div className="logo-mark" style={{ width: 32, height: 32, fontSize: 14 }}>
+          R
+        </div>
+        <div>
+          <p
+            style={{
+              fontFamily: "var(--font-sans)",
+              fontWeight: 700,
+              fontSize: 15,
+              color: "var(--fg)",
+              lineHeight: 1,
+              letterSpacing: "-0.01em",
+            }}
+          >
+            Retake
+          </p>
+          <p
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 10,
+              color: "var(--fg-3)",
+              marginTop: 3,
+              lineHeight: 1,
+            }}
+          >
+            AI Video DevTools
+          </p>
         </div>
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-        <p className="px-3 py-2 text-[11px] font-semibold text-muted-foreground/60 uppercase tracking-widest">
+      <nav style={{ flex: 1, padding: "12px 8px", overflowY: "auto" }}>
+        <p
+          style={{
+            fontFamily: "var(--font-mono)",
+            fontSize: 10,
+            fontWeight: 600,
+            color: "var(--fg-3)",
+            textTransform: "uppercase",
+            letterSpacing: "0.08em",
+            padding: "4px 12px 8px",
+          }}
+        >
           Tools
         </p>
         {NAV.map((item) => {
           const Icon = item.icon;
           const active = pathname === item.href;
           return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 px-3 py-3 rounded-xl transition-all group",
-                active
-                  ? "bg-primary/12 text-foreground"
-                  : "text-muted-foreground hover:text-foreground hover:bg-white/5"
-              )}
-            >
+            <Link key={item.href} href={item.href} className={`nav-item${active ? " active" : ""}`}>
               <div
-                className={cn(
-                  "h-8 w-8 rounded-lg flex items-center justify-center shrink-0 transition-colors",
-                  active ? "bg-primary/20" : "bg-white/5 group-hover:bg-white/8"
-                )}
+                style={{
+                  width: 28,
+                  height: 28,
+                  borderRadius: 8,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                  background: active
+                    ? "color-mix(in oklch, var(--rt-accent) 14%, transparent)"
+                    : "var(--bg-2)",
+                  transition: "background 200ms",
+                }}
               >
                 <Icon
-                  className={cn(
-                    "h-4 w-4",
-                    active ? "text-primary" : "text-muted-foreground group-hover:text-foreground"
-                  )}
+                  size={14}
+                  style={{
+                    color: active ? "var(--rt-accent)" : "var(--fg-2)",
+                    transition: "color 200ms",
+                  }}
                 />
               </div>
-              <div className="min-w-0">
-                <p className={cn("text-sm font-semibold leading-none", active ? "text-foreground" : "")}>
+              <div style={{ minWidth: 0 }}>
+                <p
+                  style={{
+                    fontFamily: "var(--font-sans)",
+                    fontSize: 13,
+                    fontWeight: active ? 600 : 500,
+                    color: active ? "var(--fg)" : "var(--fg-2)",
+                    lineHeight: 1,
+                    transition: "color 200ms",
+                  }}
+                >
                   {item.label}
                 </p>
-                <p className="text-xs text-muted-foreground mt-1 leading-none truncate">
+                <p
+                  style={{
+                    fontFamily: "var(--font-mono)",
+                    fontSize: 10,
+                    color: "var(--fg-3)",
+                    marginTop: 3,
+                    lineHeight: 1,
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                    whiteSpace: "nowrap",
+                  }}
+                >
                   {item.description}
                 </p>
               </div>
-              {active && (
-                <div className="ml-auto h-5 w-1 rounded-full bg-primary shrink-0" />
-              )}
             </Link>
           );
         })}
       </nav>
 
       {/* Bottom */}
-      <div className="p-3 border-t border-border space-y-1">
+      <div
+        style={{
+          padding: "8px 8px 12px",
+          borderTop: "1px solid var(--line)",
+          display: "flex",
+          flexDirection: "column",
+          gap: 2,
+        }}
+      >
         {/* User info */}
         {session?.user && (
-          <div className="px-3 py-3 rounded-xl bg-primary/8 border border-primary/15 mb-1">
-            <p className="text-xs font-semibold text-foreground truncate">
+          <div
+            style={{
+              padding: "8px 12px",
+              borderRadius: 10,
+              background: "var(--bg-2)",
+              border: "1px solid var(--line)",
+              marginBottom: 4,
+            }}
+          >
+            <p
+              style={{
+                fontFamily: "var(--font-sans)",
+                fontSize: 12,
+                fontWeight: 600,
+                color: "var(--fg)",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {session.user.name ?? session.user.email}
             </p>
-            <p className="text-xs text-muted-foreground truncate mt-0.5">
+            <p
+              style={{
+                fontFamily: "var(--font-mono)",
+                fontSize: 10,
+                color: "var(--fg-3)",
+                marginTop: 2,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
               {session.user.email}
             </p>
           </div>
@@ -116,17 +216,57 @@ export function Sidebar() {
 
         <button
           onClick={() => signOut({ callbackUrl: "/auth/login" })}
-          className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-muted-foreground hover:text-foreground hover:bg-white/5 transition-colors text-sm"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            width: "100%",
+            padding: "8px 12px",
+            borderRadius: 8,
+            background: "transparent",
+            border: "none",
+            cursor: "pointer",
+            fontFamily: "var(--font-sans)",
+            fontSize: 12,
+            color: "var(--fg-3)",
+            textAlign: "left",
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.background = "var(--bg-2)";
+            e.currentTarget.style.color = "var(--fg)";
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.background = "transparent";
+            e.currentTarget.style.color = "var(--fg-3)";
+          }}
         >
-          <LogOut className="h-3.5 w-3.5" />
+          <LogOut size={12} />
           Sign out
         </button>
 
         <Link
           href="/"
-          className="flex items-center gap-2 px-3 py-2.5 rounded-xl text-muted-foreground hover:text-foreground transition-colors text-sm"
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "8px 12px",
+            borderRadius: 8,
+            fontFamily: "var(--font-sans)",
+            fontSize: 12,
+            color: "var(--fg-3)",
+            textDecoration: "none",
+          }}
+          onMouseEnter={(e) => {
+            (e.currentTarget as HTMLElement).style.background = "var(--bg-2)";
+            (e.currentTarget as HTMLElement).style.color = "var(--fg)";
+          }}
+          onMouseLeave={(e) => {
+            (e.currentTarget as HTMLElement).style.background = "transparent";
+            (e.currentTarget as HTMLElement).style.color = "var(--fg-3)";
+          }}
         >
-          <ArrowLeft className="h-3.5 w-3.5" />
+          <ArrowLeft size={12} />
           Back to home
         </Link>
       </div>
