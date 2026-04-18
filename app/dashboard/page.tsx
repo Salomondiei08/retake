@@ -15,6 +15,9 @@ import {
   RefreshCw,
   MessageSquarePlus,
   Star,
+  Clapperboard,
+  ScanSearch,
+  Wrench,
 } from "lucide-react";
 import type { EvaluationResult, IterationResult } from "@/lib/types";
 
@@ -30,6 +33,7 @@ const EXAMPLES = [
 type Phase =
   | { tag: "idle" }
   | { tag: "generating"; prompt: string; iteration: number }
+  | { tag: "evaluating"; prompt: string; iteration: number; videoUrl: string }
   | {
       tag: "evaluated";
       prompt: string;
@@ -54,47 +58,36 @@ export default function DashboardPage() {
     setError(null);
   };
 
-  const runGenerate = useCallback(
-    async (currentPrompt: string, iteration: number) => {
-      setError(null);
-      setPhase({ tag: "generating", prompt: currentPrompt, iteration });
+  const runGenerate = useCallback(async (currentPrompt: string, iteration: number) => {
+    setError(null);
+    setPhase({ tag: "generating", prompt: currentPrompt, iteration });
 
-      try {
-        const genRes = await fetch("/api/generate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ prompt: currentPrompt }),
-        });
-        const genData = await genRes.json();
-        if (!genRes.ok) throw new Error(genData.error ?? "Generation failed");
+    try {
+      const genRes = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: currentPrompt }),
+      });
+      const genData = await genRes.json();
+      if (!genRes.ok) throw new Error(genData.error ?? "Generation failed");
+      const videoUrl: string = genData.videoUrl;
 
-        const videoUrl: string = genData.videoUrl;
+      setPhase({ tag: "evaluating", prompt: currentPrompt, iteration, videoUrl });
 
-        // Immediately kick off evaluation
-        const evalRes = await fetch("/api/evaluate", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ videoUrl, prompt: currentPrompt }),
-        });
-        const evalData = await evalRes.json();
-        if (!evalRes.ok) throw new Error(evalData.error ?? "Evaluation failed");
+      const evalRes = await fetch("/api/evaluate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ videoUrl, prompt: currentPrompt }),
+      });
+      const evalData = await evalRes.json();
+      if (!evalRes.ok) throw new Error(evalData.error ?? "Evaluation failed");
 
-        const scores: EvaluationResult = evalData;
-
-        setPhase({
-          tag: "evaluated",
-          prompt: currentPrompt,
-          iteration,
-          videoUrl,
-          scores,
-        });
-      } catch (err) {
-        setError(err instanceof Error ? err.message : "Unknown error");
-        setPhase({ tag: "idle" });
-      }
-    },
-    []
-  );
+      setPhase({ tag: "evaluated", prompt: currentPrompt, iteration, videoUrl, scores: evalData });
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Unknown error");
+      setPhase({ tag: "idle" });
+    }
+  }, []);
 
   const handleAccept = useCallback(() => {
     if (phase.tag !== "evaluated") return;
@@ -106,11 +99,8 @@ export default function DashboardPage() {
       healed: phase.iteration > 1,
     };
     const all = [...iterations, iter];
+    const best = all.reduce((a, b) => (b.scores.overall > a.scores.overall ? b : a));
     setIterations(all);
-
-    const best = all.reduce((a, b) =>
-      b.scores.overall > a.scores.overall ? b : a
-    );
     setPhase({ tag: "done", bestIteration: best });
   }, [phase, iterations]);
 
@@ -125,13 +115,11 @@ export default function DashboardPage() {
       scores,
       healed: iteration > 1,
     };
-    setIterations((prev) => [...prev, iter]);
+    const newIterations = [...iterations, iter];
+    setIterations(newIterations);
 
     if (iteration >= 3) {
-      const all = [...iterations, iter];
-      const best = all.reduce((a, b) =>
-        b.scores.overall > a.scores.overall ? b : a
-      );
+      const best = newIterations.reduce((a, b) => (b.scores.overall > a.scores.overall ? b : a));
       setPhase({ tag: "done", bestIteration: best });
       return;
     }
@@ -148,9 +136,8 @@ export default function DashboardPage() {
       const healData = await healRes.json();
       if (!healRes.ok) throw new Error(healData.error ?? "Heal failed");
 
-      const improvedPrompt: string = healData.improvedPrompt;
       setUserRemarks("");
-      await runGenerate(improvedPrompt, iteration + 1);
+      await runGenerate(healData.improvedPrompt, iteration + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       setPhase({ tag: "idle" });
@@ -160,26 +147,27 @@ export default function DashboardPage() {
   const isIdle = phase.tag === "idle";
   const isEvaluated = phase.tag === "evaluated";
   const isDone = phase.tag === "done";
+  const isWorking = ["generating", "evaluating", "healing"].includes(phase.tag);
 
-  const passedThreshold =
-    isEvaluated && (phase as { tag: "evaluated"; scores: EvaluationResult }).scores.overall >= SCORE_THRESHOLD;
+  const evaluatedPhase = isEvaluated ? (phase as Extract<Phase, { tag: "evaluated" }>) : null;
+  const passedThreshold = evaluatedPhase ? evaluatedPhase.scores.overall >= SCORE_THRESHOLD : false;
 
   return (
     <div className="flex flex-col h-full">
       {/* Header */}
-      <div className="px-6 py-5 border-b border-white/5 flex items-center gap-3">
-        <div className="h-8 w-8 rounded-lg bg-green-500/10 border border-green-500/20 flex items-center justify-center">
-          <Wand2 className="h-4 w-4 text-green-400" />
+      <div className="px-6 py-4 border-b border-border flex items-center gap-3">
+        <div className="h-9 w-9 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center">
+          <Wand2 className="h-4.5 w-4.5 text-primary" />
         </div>
         <div>
-          <h1 className="text-sm font-semibold">Self-Healing Playground</h1>
-          <p className="text-xs text-white/40">Generate → Evaluate → Repair automatically</p>
+          <h1 className="text-base font-bold">Self-Healing Playground</h1>
+          <p className="text-sm text-muted-foreground">Generate → Evaluate → Repair, automatically</p>
         </div>
         {isDone && (
-          <div className="ml-auto flex items-center gap-2 px-3 py-1.5 rounded-full bg-green-500/10 border border-green-500/20">
-            <Sparkles className="h-3 w-3 text-green-400" />
-            <span className="text-xs text-green-400 font-medium">
-              Best score: {(phase as { tag: "done"; bestIteration: IterationResult }).bestIteration.scores.overall}
+          <div className="ml-auto flex items-center gap-2 px-4 py-2 rounded-full bg-primary/12 border border-primary/25">
+            <Sparkles className="h-3.5 w-3.5 text-primary" />
+            <span className="text-sm text-primary font-semibold">
+              Best: {(phase as Extract<Phase, { tag: "done" }>).bestIteration.scores.overall}/100
             </span>
           </div>
         )}
@@ -187,41 +175,41 @@ export default function DashboardPage() {
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left panel */}
-        <div className="w-72 shrink-0 border-r border-white/5 flex flex-col">
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
-            <div className="space-y-2">
-              <label className="text-xs font-medium text-white/50">Prompt</label>
+        <div className="w-72 shrink-0 border-r border-border flex flex-col">
+          <div className="flex-1 overflow-y-auto p-5 space-y-5">
+            <div className="space-y-2.5">
+              <label className="text-sm font-semibold text-foreground/70">Your prompt</label>
               <Textarea
                 value={prompt}
                 onChange={(e) => setPrompt(e.target.value)}
                 placeholder="Describe the video you want to generate..."
-                className="min-h-[120px] resize-none text-sm bg-white/3 border-white/10 focus:border-green-500/40 placeholder:text-white/20 font-mono"
+                className="min-h-[130px] resize-none text-sm bg-card border-border focus:border-primary/50 placeholder:text-muted-foreground/40 font-mono leading-relaxed"
                 disabled={!isIdle}
               />
             </div>
 
-            <div className="space-y-1.5">
-              <p className="text-xs text-white/30">Quick examples</p>
+            <div className="space-y-2">
+              <p className="text-sm font-semibold text-foreground/50">Quick examples</p>
               {EXAMPLES.map((ex, i) => (
                 <button
                   key={i}
                   onClick={() => setPrompt(ex)}
                   disabled={!isIdle}
-                  className="w-full text-left text-xs px-3 py-2 rounded-lg border border-white/6 bg-white/2 hover:bg-white/5 hover:border-white/10 text-white/40 hover:text-white/70 transition-colors disabled:opacity-40 flex items-start gap-2"
+                  className="w-full text-left text-sm px-3.5 py-2.5 rounded-xl border border-border bg-card hover:bg-secondary hover:border-primary/30 text-muted-foreground hover:text-foreground transition-all disabled:opacity-40 flex items-start gap-2.5"
                 >
-                  <ChevronRight className="h-3 w-3 mt-0.5 shrink-0 text-white/20" />
-                  <span className="line-clamp-2">{ex}</span>
+                  <ChevronRight className="h-3.5 w-3.5 mt-0.5 shrink-0 text-muted-foreground/40" />
+                  <span className="line-clamp-2 leading-snug">{ex}</span>
                 </button>
               ))}
             </div>
           </div>
 
-          <div className="p-4 border-t border-white/5 space-y-2">
+          <div className="p-4 border-t border-border space-y-2">
             {isIdle ? (
               <Button
                 onClick={() => runGenerate(prompt, 1)}
                 disabled={!prompt.trim()}
-                className="w-full gap-2 bg-green-500 hover:bg-green-400 text-black font-semibold disabled:opacity-40"
+                className="w-full gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-sm h-11 disabled:opacity-40 rounded-xl"
               >
                 <Play className="h-4 w-4" />
                 Generate &amp; Evaluate
@@ -230,19 +218,15 @@ export default function DashboardPage() {
               <Button
                 onClick={reset}
                 variant="outline"
-                className="w-full gap-2 border-white/10 text-white/60 hover:text-white hover:bg-white/5"
+                className="w-full gap-2 border-border text-foreground/60 hover:text-foreground hover:bg-secondary h-11 rounded-xl"
               >
                 <RefreshCw className="h-4 w-4" />
                 Start Over
               </Button>
             ) : (
-              <div className="flex items-center gap-2 justify-center text-xs text-white/30">
-                <Loader2 className="h-3.5 w-3.5 animate-spin text-green-400" />
-                {phase.tag === "generating"
-                  ? `Generating iteration ${(phase as { tag: "generating"; iteration: number }).iteration}...`
-                  : phase.tag === "healing"
-                  ? "Healing prompt..."
-                  : "Evaluating..."}
+              <div className="h-11 flex items-center justify-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                {phase.tag === "healing" ? "Healing with Seed 2.0..." : "Pipeline running..."}
               </div>
             )}
           </div>
@@ -253,46 +237,38 @@ export default function DashboardPage() {
           {/* Idle empty state */}
           {isIdle && iterations.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center px-8 py-16">
-              <div className="h-16 w-16 rounded-2xl bg-white/3 border border-white/8 flex items-center justify-center mb-4">
-                <Wand2 className="h-7 w-7 text-white/20" />
+              <div className="h-20 w-20 rounded-3xl bg-card border border-border flex items-center justify-center mb-5">
+                <Clapperboard className="h-9 w-9 text-muted-foreground/30" />
               </div>
-              <h3 className="text-sm font-medium text-white/50 mb-2">No results yet</h3>
-              <p className="text-xs text-white/25 max-w-xs leading-relaxed">
-                Enter a prompt and hit Generate. SeedTrace will generate your video, evaluate it with Seed 2.0, and pause here so you can review before deciding what to do next.
+              <h3 className="text-lg font-bold text-foreground/60 mb-2">Ready when you are</h3>
+              <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
+                Enter a prompt on the left and hit Generate. SeedTrace will produce the video, score it with Seed 2.0, then pause here so you can review — and decide what happens next.
               </p>
             </div>
           )}
 
-          {/* Loading state */}
-          {(phase.tag === "generating" || phase.tag === "healing") && (
-            <div className="mx-6 mt-6 p-5 rounded-xl border border-white/8 bg-white/2 flex items-center gap-4">
-              <Loader2 className="h-5 w-5 text-green-400 animate-spin shrink-0" />
-              <div>
-                <p className="text-sm font-medium text-white/70">
-                  {phase.tag === "healing" ? "Healing prompt with Seed 2.0..." : `Generating iteration ${(phase as { tag: "generating"; iteration: number }).iteration} with Seedance 2.0...`}
-                </p>
-                <p className="text-xs text-white/30 mt-0.5">
-                  {phase.tag === "healing"
-                    ? "Rewriting the prompt to address detected issues and your remarks"
-                    : "Submitting job, polling for completion, then running evaluation"}
-                </p>
-              </div>
+          {/* ── Active pipeline state (very visible) ─── */}
+          {isWorking && (
+            <div className="m-6">
+              <ActivePipelineCard phase={phase as Extract<Phase, { tag: "generating" | "evaluating" | "healing" }>} />
             </div>
           )}
 
           {/* Error */}
           {error && (
-            <div className="mx-6 mt-6 p-4 rounded-xl border border-red-500/20 bg-red-500/5">
-              <p className="text-sm text-red-400">Error: {error}</p>
+            <div className="mx-6 mt-6 p-4 rounded-xl border border-destructive/30 bg-destructive/8">
+              <p className="text-sm font-medium text-destructive">Error: {error}</p>
             </div>
           )}
 
-          {/* Past iterations */}
+          {/* Past iterations (compact) */}
           {iterations.length > 0 && (
             <div className="px-6 pt-6 space-y-3">
-              <p className="text-xs font-medium text-white/30 uppercase tracking-wider">
-                Previous iterations
-              </p>
+              {!isDone && (
+                <p className="text-xs font-semibold text-muted-foreground/50 uppercase tracking-wider">
+                  Previous iterations
+                </p>
+              )}
               <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                 {iterations.map((iter) => (
                   <PastIterationCard key={iter.iteration} iter={iter} />
@@ -301,10 +277,10 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Current evaluation — the interactive pause */}
-          {isEvaluated && (
+          {/* Current evaluation — interactive pause */}
+          {isEvaluated && evaluatedPhase && (
             <EvaluationPanel
-              phase={phase as Extract<Phase, { tag: "evaluated" }>}
+              phase={evaluatedPhase}
               iterations={iterations}
               userRemarks={userRemarks}
               setUserRemarks={setUserRemarks}
@@ -326,22 +302,140 @@ export default function DashboardPage() {
   );
 }
 
-/* ─── Sub-components ─────────────────────────────────────── */
+/* ─── Active pipeline card ─────────────────────────────────── */
+
+const PHASE_CONFIG = {
+  generating: {
+    icon: Clapperboard,
+    color: "text-primary",
+    bg: "bg-primary/10",
+    border: "border-primary/25",
+    label: (iteration: number) => `Generating iteration ${iteration} with Seedance 2.0`,
+    sub: "Submitting job to BytePlus and waiting for the video to render",
+  },
+  evaluating: {
+    icon: ScanSearch,
+    color: "text-accent",
+    bg: "bg-accent/10",
+    border: "border-accent/25",
+    label: (iteration: number) => `Evaluating iteration ${iteration} with Seed 2.0`,
+    sub: "Seed 2.0 Vision is scoring prompt adherence, temporal consistency, and physical logic",
+  },
+  healing: {
+    icon: Wrench,
+    color: "text-primary",
+    bg: "bg-primary/10",
+    border: "border-primary/25",
+    label: (iteration: number) => `Rewriting prompt after iteration ${iteration}`,
+    sub: "Seed 2.0 is combining the AI analysis and your remarks into an improved prompt",
+  },
+} as const;
+
+function ActivePipelineCard({
+  phase,
+}: {
+  phase: Extract<Phase, { tag: "generating" | "evaluating" | "healing" }>;
+}) {
+  const cfg = PHASE_CONFIG[phase.tag];
+  const Icon = cfg.icon;
+
+  return (
+    <div className={`rounded-2xl border ${cfg.border} ${cfg.bg} p-6`}>
+      {/* Step indicators */}
+      <div className="flex items-center gap-3 mb-6">
+        {(["generating", "evaluating"] as const).map((step, i) => {
+          const isDone =
+            (step === "generating" && (phase.tag === "evaluating" || phase.tag === "healing")) ||
+            (step === "evaluating" && phase.tag === "healing");
+          const isActive = phase.tag === step;
+          return (
+            <div key={step} className="flex items-center gap-2">
+              <div
+                className={`h-7 w-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                  isDone
+                    ? "bg-primary/20 text-primary"
+                    : isActive
+                    ? `${cfg.bg} ${cfg.color} border ${cfg.border}`
+                    : "bg-white/5 text-muted-foreground/40"
+                }`}
+              >
+                {isDone ? <CheckCircle2 className="h-4 w-4" /> : i + 1}
+              </div>
+              <span
+                className={`text-xs font-medium capitalize ${
+                  isActive ? cfg.color : isDone ? "text-primary" : "text-muted-foreground/40"
+                }`}
+              >
+                {step}
+              </span>
+              {i < 1 && <div className="w-8 h-px bg-white/10 mx-1" />}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Main status */}
+      <div className="flex items-start gap-4">
+        <div className={`h-12 w-12 rounded-2xl ${cfg.bg} border ${cfg.border} flex items-center justify-center shrink-0`}>
+          <Icon className={`h-6 w-6 ${cfg.color}`} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 mb-1">
+            <Loader2 className={`h-4 w-4 animate-spin ${cfg.color} shrink-0`} />
+            <h3 className="text-base font-bold">{cfg.label(phase.iteration)}</h3>
+          </div>
+          <p className="text-sm text-muted-foreground leading-relaxed">{cfg.sub}</p>
+        </div>
+      </div>
+
+      {/* Current prompt */}
+      {"prompt" in phase && phase.prompt && (
+        <div className="mt-5 p-4 rounded-xl bg-background/40 border border-border">
+          <p className="text-xs font-semibold text-muted-foreground/60 uppercase tracking-wider mb-2">
+            Prompt in use
+          </p>
+          <p className="text-sm font-mono text-foreground/80 leading-relaxed">{phase.prompt}</p>
+        </div>
+      )}
+
+      {/* Animated skeleton for video placeholder */}
+      {phase.tag === "generating" && (
+        <div className="mt-4 rounded-xl overflow-hidden aspect-video bg-background/30 relative">
+          <div className="absolute inset-0 flex items-center justify-center">
+            <div className="text-center space-y-2">
+              <Clapperboard className="h-8 w-8 text-muted-foreground/20 mx-auto" />
+              <p className="text-xs text-muted-foreground/30">Video rendering...</p>
+            </div>
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 h-1 bg-white/5">
+            <div className={`h-full ${phase.tag === "generating" ? "bg-primary/60" : "bg-accent/60"} animate-pulse`} style={{ width: "60%" }} />
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Past iteration (compact card) ───────────────────────── */
 
 function PastIterationCard({ iter }: { iter: IterationResult }) {
   return (
-    <div className="rounded-xl border border-white/6 bg-white/2 overflow-hidden">
-      <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2">
-        <span className="text-xs text-white/40 font-mono">#{iter.iteration}</span>
+    <div className="rounded-2xl border border-border bg-card overflow-hidden">
+      <div className="px-4 py-3 border-b border-border flex items-center gap-2">
+        <span className="text-sm font-bold text-muted-foreground">#{iter.iteration}</span>
         {iter.healed && (
-          <Badge className="text-[10px] h-4 px-1.5 bg-purple-500/15 text-purple-400 border-purple-500/20">Healed</Badge>
+          <Badge className="text-xs h-5 px-2 bg-accent/15 text-accent border-accent/25">Healed</Badge>
         )}
-        <span className="ml-auto text-xs font-mono font-bold text-white/40">{iter.scores.overall}/100</span>
+        <span className="ml-auto text-sm font-bold font-mono text-muted-foreground/70">
+          {iter.scores.overall}/100
+        </span>
       </div>
       <video src={iter.videoUrl} controls muted className="w-full bg-black aspect-video" />
     </div>
   );
 }
+
+/* ─── Evaluation panel (the interactive pause) ─────────────── */
 
 function EvaluationPanel({
   phase,
@@ -366,43 +460,53 @@ function EvaluationPanel({
 
   return (
     <div className="mx-6 mt-6 mb-6">
+      {/* Status banner */}
       <div
-        className={`rounded-xl border overflow-hidden ${
-          passedThreshold ? "border-green-500/30 bg-green-500/5" : "border-yellow-500/20 bg-yellow-500/5"
+        className={`rounded-2xl border overflow-hidden ${
+          passedThreshold
+            ? "border-primary/30 bg-primary/5"
+            : "border-accent/20 bg-accent/5"
         }`}
       >
-        {/* Evaluation header */}
-        <div className="px-5 py-4 border-b border-white/5 flex items-start justify-between gap-4">
+        {/* Header */}
+        <div className="px-5 py-4 border-b border-border flex items-start justify-between gap-4">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <CheckCircle2 className="h-4 w-4 text-green-400 shrink-0" />
-              <span className="text-sm font-semibold">
-                Iteration {phase.iteration} — Evaluation Complete
+            <div className="flex items-center gap-2.5 mb-1.5">
+              <CheckCircle2 className={`h-5 w-5 shrink-0 ${passedThreshold ? "text-primary" : "text-accent"}`} />
+              <span className="text-base font-bold">
+                Iteration {phase.iteration} complete — your turn
               </span>
               {delta !== null && (
-                <span className={`text-xs font-bold font-mono ${delta >= 0 ? "text-green-400" : "text-red-400"}`}>
+                <Badge
+                  className={`text-xs font-mono font-bold ${
+                    delta >= 0
+                      ? "bg-primary/15 text-primary border-primary/25"
+                      : "bg-destructive/15 text-destructive border-destructive/25"
+                  }`}
+                >
                   {delta >= 0 ? "+" : ""}{delta} pts
-                </span>
+                </Badge>
               )}
             </div>
-            <p className="text-xs text-white/40">
+            <p className="text-sm text-muted-foreground">
               {passedThreshold
-                ? `Score ${phase.scores.overall} meets the quality threshold (${SCORE_THRESHOLD}). You can accept this video or keep healing.`
-                : `Score ${phase.scores.overall} is below the threshold (${SCORE_THRESHOLD}). Consider healing or accepting anyway.`}
+                ? `Score ${phase.scores.overall} clears the ${SCORE_THRESHOLD} threshold. You can accept this or keep polishing.`
+                : `Score ${phase.scores.overall} is below ${SCORE_THRESHOLD}. Review the issues, add your notes, then heal or accept.`}
             </p>
           </div>
           <Badge
-            className={`shrink-0 text-xs px-2 py-0.5 ${
+            className={`shrink-0 text-sm font-bold px-3 py-1 ${
               passedThreshold
-                ? "bg-green-500/15 text-green-400 border-green-500/20"
-                : "bg-yellow-500/15 text-yellow-400 border-yellow-500/20"
+                ? "bg-primary/15 text-primary border-primary/30"
+                : "bg-accent/15 text-accent border-accent/25"
             }`}
           >
-            {passedThreshold ? "Passed" : "Below threshold"}
+            {passedThreshold ? "Passed ✓" : "Below threshold"}
           </Badge>
         </div>
 
-        <div className="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-white/5">
+        {/* Content grid */}
+        <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
           {/* Video */}
           <div>
             <video
@@ -414,7 +518,7 @@ function EvaluationPanel({
               className="w-full bg-black aspect-video"
             />
             <div className="px-4 py-3">
-              <p className="text-[10px] text-white/30 font-mono leading-relaxed">{phase.prompt}</p>
+              <p className="text-xs text-muted-foreground font-mono leading-relaxed">{phase.prompt}</p>
             </div>
           </div>
 
@@ -424,23 +528,24 @@ function EvaluationPanel({
 
             {/* User remarks */}
             <div className="space-y-2">
-              <label className="flex items-center gap-1.5 text-xs font-medium text-white/50">
-                <MessageSquarePlus className="h-3.5 w-3.5" />
-                Your remarks (optional)
+              <label className="flex items-center gap-2 text-sm font-semibold text-foreground/70">
+                <MessageSquarePlus className="h-4 w-4" />
+                Your remarks
+                <span className="text-xs font-normal text-muted-foreground">(optional)</span>
               </label>
               <Textarea
                 value={userRemarks}
                 onChange={(e) => setUserRemarks(e.target.value)}
-                placeholder="Add anything you noticed — lighting issues, wrong colors, motion feels off... Seed 2.0 will incorporate your notes when healing."
-                className="min-h-[80px] resize-none text-xs bg-white/3 border-white/10 focus:border-green-500/40 placeholder:text-white/15"
+                placeholder="Add what you noticed — lighting off, colors wrong, motion too fast... Seed 2.0 will use this when rewriting the prompt."
+                className="min-h-[90px] resize-none text-sm bg-background/50 border-border focus:border-primary/40 placeholder:text-muted-foreground/30 leading-relaxed"
               />
             </div>
 
-            {/* Action buttons */}
-            <div className="flex flex-col gap-2">
+            {/* Actions */}
+            <div className="flex flex-col gap-2.5">
               <Button
                 onClick={onAccept}
-                className="w-full gap-2 bg-green-500 hover:bg-green-400 text-black font-semibold"
+                className="w-full gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold h-11 rounded-xl"
               >
                 <CheckCircle2 className="h-4 w-4" />
                 Accept this video
@@ -449,13 +554,13 @@ function EvaluationPanel({
                 <Button
                   onClick={onHeal}
                   variant="outline"
-                  className="w-full gap-2 border-white/10 text-white/60 hover:text-white hover:bg-white/5"
+                  className="w-full gap-2 border-border text-foreground/60 hover:text-foreground hover:bg-secondary h-11 rounded-xl"
                 >
                   <Wand2 className="h-4 w-4" />
-                  Heal &amp; Retry (iteration {phase.iteration + 1}/3)
+                  Heal &amp; retry — iteration {phase.iteration + 1} of 3
                 </Button>
               ) : (
-                <p className="text-center text-xs text-white/25">Max iterations reached</p>
+                <p className="text-center text-sm text-muted-foreground/40 py-1">Max 3 iterations reached</p>
               )}
             </div>
           </div>
@@ -465,22 +570,29 @@ function EvaluationPanel({
   );
 }
 
+/* ─── Done panel ───────────────────────────────────────────── */
+
 function DonePanel({ bestIteration }: { bestIteration: IterationResult }) {
   return (
     <div className="mx-6 mt-6 mb-6">
-      <div className="rounded-xl border border-green-500/30 bg-green-500/5 overflow-hidden">
-        <div className="px-5 py-4 border-b border-white/5 flex items-center gap-2">
-          <Star className="h-4 w-4 text-green-400" />
-          <span className="text-sm font-semibold">Best result — iteration #{bestIteration.iteration}</span>
-          <Badge className="ml-auto bg-green-500/15 text-green-400 border-green-500/20">
+      <div className="rounded-2xl border border-primary/30 bg-primary/5 overflow-hidden">
+        <div className="px-5 py-4 border-b border-border flex items-center gap-3">
+          <div className="h-8 w-8 rounded-xl bg-primary/15 border border-primary/25 flex items-center justify-center">
+            <Star className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <p className="text-base font-bold">Best result — iteration #{bestIteration.iteration}</p>
+            <p className="text-sm text-muted-foreground">This scored highest across all iterations</p>
+          </div>
+          <Badge className="ml-auto bg-primary/15 text-primary border-primary/25 text-sm font-bold px-3 py-1">
             {bestIteration.scores.overall}/100
           </Badge>
         </div>
-        <div className="grid md:grid-cols-2 gap-0 divide-y md:divide-y-0 md:divide-x divide-white/5">
+        <div className="grid md:grid-cols-2 divide-y md:divide-y-0 md:divide-x divide-border">
           <div>
             <video src={bestIteration.videoUrl} controls muted className="w-full bg-black aspect-video" />
             <div className="px-4 py-3">
-              <p className="text-[10px] text-white/30 font-mono leading-relaxed">{bestIteration.prompt}</p>
+              <p className="text-xs text-muted-foreground font-mono leading-relaxed">{bestIteration.prompt}</p>
             </div>
           </div>
           <div className="p-5">
