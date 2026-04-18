@@ -1,7 +1,12 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function middleware(request: NextRequest) {
+/**
+ * Next.js 16 proxy (previously "middleware").
+ * Runs on Node.js runtime for every matched request.
+ * Guards /dashboard routes — redirects to login if no session.
+ */
+export async function proxy(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request });
 
   const supabase = createServerClient(
@@ -25,11 +30,10 @@ export async function middleware(request: NextRequest) {
     }
   );
 
-  // Refresh session — required so the session doesn't go stale mid-request
+  // Refresh session so it doesn't go stale mid-request
   const { data: { user } } = await supabase.auth.getUser();
 
-  const isDashboard = request.nextUrl.pathname.startsWith("/dashboard");
-  if (isDashboard && !user) {
+  if (request.nextUrl.pathname.startsWith("/dashboard") && !user) {
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
     url.searchParams.set("callbackUrl", request.nextUrl.pathname);
