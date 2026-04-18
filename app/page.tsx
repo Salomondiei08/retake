@@ -2,7 +2,115 @@
 
 import Link from "next/link";
 import { HeroDemo } from "@/components/HeroDemo";
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useRef, useState, useCallback, type CSSProperties } from "react";
+
+/* ── Video URL store — fetched once, polled until complete ──── */
+type VideoId = "hero_v1" | "hero_v2";
+type VideoMap = Partial<Record<VideoId, string>>;
+
+/**
+ * Lazy video component.
+ * - Shows the shader placeholder until both (a) a URL is available and
+ *   (b) the element is in the viewport.
+ * - Uses preload="none" so the browser downloads nothing until play time.
+ * - Starts playing automatically (muted) once it enters the viewport.
+ */
+function LandingVideo({
+  videoId,
+  videos,
+  variant = "cool",
+  aspect = "16 / 9",
+  caption,
+}: {
+  videoId: VideoId;
+  videos: VideoMap;
+  variant?: "warm" | "cool" | "green" | "purple";
+  aspect?: string;
+  caption?: string;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [visible, setVisible] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const url = videos[videoId];
+
+  // Watch for viewport entry
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    const obs = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) setVisible(true); },
+      { threshold: 0.1 }
+    );
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, []);
+
+  // Autoplay when both visible and URL is ready
+  useEffect(() => {
+    const vid = videoRef.current;
+    if (!vid || !visible || !url) return;
+    vid.play().catch(() => {/* autoplay blocked — fine, user can click */});
+  }, [visible, url]);
+
+  return (
+    <div ref={containerRef} style={{ position: "relative", aspectRatio: aspect, borderRadius: 10, overflow: "hidden", background: "var(--bg-2)" }}>
+      {/* Shader placeholder — always rendered, fades out when video loads */}
+      <div
+        className={`shader shader-${variant}`}
+        style={{
+          position: "absolute", inset: 0,
+          opacity: loaded ? 0 : 1,
+          transition: "opacity 600ms ease",
+          zIndex: 1,
+        }}
+      >
+        <div className="shader-frame-overlay" />
+        {caption && !loaded && <div className="shader-label">{caption}</div>}
+      </div>
+
+      {/* Real video — only src-loaded when visible and URL exists */}
+      {url && visible && (
+        <video
+          ref={videoRef}
+          src={url}
+          preload="none"
+          muted
+          loop
+          playsInline
+          onLoadedData={() => setLoaded(true)}
+          style={{
+            position: "absolute", inset: 0,
+            width: "100%", height: "100%",
+            objectFit: "cover",
+            opacity: loaded ? 1 : 0,
+            transition: "opacity 600ms ease",
+            zIndex: 2,
+          }}
+        />
+      )}
+
+      {/* Caption over real video */}
+      {caption && loaded && (
+        <div className="shader-label" style={{ zIndex: 3 }}>{caption}</div>
+      )}
+
+      {/* Generating indicator when URL not yet available */}
+      {!url && (
+        <div style={{
+          position: "absolute", bottom: 8, left: 8, zIndex: 3,
+          fontFamily: "var(--font-mono)", fontSize: 9,
+          background: "rgba(0,0,0,0.65)", color: "var(--rt-accent)",
+          padding: "2px 7px", borderRadius: 3,
+          display: "flex", alignItems: "center", gap: 5,
+        }}>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: "currentColor", animation: "pulse-dot 1.4s ease-in-out infinite" }} />
+          generating…
+        </div>
+      )}
+    </div>
+  );
+}
 
 /* ── Scroll-triggered animation hook ───────────────────────── */
 function useInView(threshold = 0.12) {
@@ -149,6 +257,27 @@ export default function LandingPage() {
     return () => cancelAnimationFrame(t);
   }, []);
 
+  // Video URLs — fetched once, polled every 8s until all slots complete
+  const [videos, setVideos] = useState<VideoMap>({});
+  const poll = useCallback(async () => {
+    try {
+      const res = await fetch("/api/landing-videos");
+      const data = await res.json() as { videos: VideoMap; complete: boolean };
+      setVideos(data.videos);
+      return data.complete;
+    } catch { return false; }
+  }, []);
+
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout>;
+    const run = async () => {
+      const done = await poll();
+      if (!done) timer = setTimeout(run, 8_000);
+    };
+    run();
+    return () => clearTimeout(timer);
+  }, [poll]);
+
   const heroStyle = (delay: number): CSSProperties => ({
     opacity: heroIn ? 1 : 0,
     transform: heroIn ? "translateY(0)" : "translateY(24px)",
@@ -210,7 +339,7 @@ export default function LandingPage() {
 
           {/* Animated hero demo */}
           <div style={{ ...heroStyle(360), marginTop: 64 }}>
-            <HeroDemo />
+            <HeroDemo videos={videos} />
           </div>
         </div>
 
@@ -362,11 +491,11 @@ export default function LandingPage() {
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   {[
-                    { v: "cool" as const, caption: "iter_01 · 6.3", scores: [[82,"Prompt"],[64,"Temporal"],[43,"Physics"]] },
-                    { v: "warm" as const, caption: "iter_02 · 8.9 ✓", scores: [[91,"Prompt"],[87,"Temporal"],[89,"Physics"]] },
-                  ].map(({ v, caption, scores }) => (
+                    { v: "cool" as const, vid: "hero_v1" as VideoId, caption: "iter_01 · 6.3", scores: [[82,"Prompt"],[64,"Temporal"],[43,"Physics"]] },
+                    { v: "warm" as const, vid: "hero_v2" as VideoId, caption: "iter_02 · 8.9 ✓", scores: [[91,"Prompt"],[87,"Temporal"],[89,"Physics"]] },
+                  ].map(({ v, vid, caption, scores }) => (
                     <div key={caption}>
-                      <Shader variant={v} caption={caption} aspect="16 / 10" />
+                      <LandingVideo videoId={vid} videos={videos} variant={v} caption={caption} aspect="16 / 10" />
                       <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
                         {scores.map(([pct, label]) => (
                           <div key={label} className="score-row">
@@ -465,14 +594,22 @@ export default function LandingPage() {
                   <span className="chip chip-accent"><span className="chip-dot pulse" />2 running</span>
                 </div>
                 <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 8 }}>
-                  {(["warm","cool","green","purple","warm","cool","green","warm"] as const).map((v, i) => (
-                    <div key={i} style={{ position: "relative" }}>
-                      <Shader variant={v} aspect="1 / 1" caption={`p_${String(i+1).padStart(2,"0")}`} />
-                      <div style={{ position: "absolute", top: 6, right: 6, fontFamily: "var(--font-mono)", fontSize: 9, background: "rgba(0,0,0,0.7)", color: i < 5 ? "var(--rt-ok)" : i === 5 ? "var(--rt-accent)" : "rgba(255,255,255,0.5)", padding: "2px 5px", borderRadius: 3 }}>
-                        {i < 5 ? `✓ ${(7.5+i*0.3).toFixed(1)}` : i === 5 ? "gen" : "…"}
+                  {(["warm","cool","green","purple","warm","cool","green","warm"] as const).map((v, i) => {
+                    // Alternate between the two generated videos for "done" slots
+                    const vidId: VideoId = i % 2 === 0 ? "hero_v1" : "hero_v2";
+                    const isDone = i < 5;
+                    return (
+                      <div key={i} style={{ position: "relative" }}>
+                        {isDone
+                          ? <LandingVideo videoId={vidId} videos={videos} variant={v} aspect="1 / 1" />
+                          : <Shader variant={v} aspect="1 / 1" caption={`p_${String(i+1).padStart(2,"0")}`} />
+                        }
+                        <div style={{ position: "absolute", top: 6, right: 6, fontFamily: "var(--font-mono)", fontSize: 9, background: "rgba(0,0,0,0.7)", color: isDone ? "var(--rt-ok)" : i === 5 ? "var(--rt-accent)" : "rgba(255,255,255,0.5)", padding: "2px 5px", borderRadius: 3, zIndex: 10 }}>
+                          {isDone ? `✓ ${(7.5+i*0.3).toFixed(1)}` : i === 5 ? "gen" : "…"}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
                 <div style={{ marginTop: 16, height: 6, background: "var(--bg-3)", borderRadius: 3, overflow: "hidden" }}>
                   <div style={{ width: "70%", height: "100%", background: "var(--rt-accent)", boxShadow: "0 0 10px var(--rt-accent-glow)" }} />
