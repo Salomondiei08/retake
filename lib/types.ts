@@ -26,11 +26,34 @@ export interface PipelineEvent {
     | "error";
   iteration?: number;
   prompt?: string;
+  oldPrompt?: string;   // set on healing event — what prompt was replaced
   videoUrl?: string;
   scores?: EvaluationResult;
   repairedPrompt?: string;
   bestIteration?: IterationResult;
   allIterations?: IterationResult[];
+  message?: string;
+}
+
+// ── Batch types ───────────────────────────────────────────────
+
+export interface BatchPromptResult {
+  index: number;
+  prompt: string;
+  bestIteration: IterationResult | null;
+  allIterations: IterationResult[];
+  passed: boolean;
+  error?: string;
+}
+
+export interface BatchEvent {
+  type: "batch_start" | "prompt_start" | "prompt_progress" | "prompt_done" | "batch_done" | "error";
+  total?: number;
+  index?: number;
+  prompt?: string;
+  event?: PipelineEvent;          // nested pipeline event for prompt_progress
+  result?: BatchPromptResult;
+  results?: BatchPromptResult[];
   message?: string;
 }
 

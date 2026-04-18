@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { Zap, Wand2, FlaskConical, ArrowLeft, History, LogOut } from "lucide-react";
+import { Zap, Wand2, FlaskConical, ArrowLeft, History, LogOut, Layers } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { signOut, useSession } from "next-auth/react";
 
@@ -12,6 +12,12 @@ const NAV = [
     href: "/dashboard",
     icon: Wand2,
     description: "Self-healing generation",
+  },
+  {
+    label: "Batch",
+    href: "/dashboard/batch",
+    icon: Layers,
+    description: "Run many prompts at once",
   },
   {
     label: "CI Suite",

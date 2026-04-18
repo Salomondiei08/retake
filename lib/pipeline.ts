@@ -2,23 +2,34 @@ import { generateVideo } from "./seedance";
 import { evaluateVideo, repairPrompt } from "./seed2";
 import type { IterationResult, PipelineEvent } from "./types";
 
-const PASS_THRESHOLD = parseInt(process.env.SCORE_THRESHOLD ?? "75", 10);
-const MAX_ITERATIONS = 3;
+const DEFAULT_THRESHOLD = parseInt(process.env.SCORE_THRESHOLD ?? "75", 10);
+const DEFAULT_MAX_ITERATIONS = 3;
+
+export interface PipelineOptions {
+  maxIterations?: number;
+  threshold?: number;
+  userRemarks?: string;
+}
 
 export async function runSelfHealingPipeline(
   originalPrompt: string,
-  emit: (event: PipelineEvent) => void
+  emit: (event: PipelineEvent) => void,
+  options: PipelineOptions = {}
 ): Promise<void> {
+  const maxIterations = options.maxIterations ?? DEFAULT_MAX_ITERATIONS;
+  const threshold = options.threshold ?? DEFAULT_THRESHOLD;
+  const userRemarks = options.userRemarks ?? "";
+
   const allIterations: IterationResult[] = [];
   let currentPrompt = originalPrompt;
 
-  for (let i = 1; i <= MAX_ITERATIONS; i++) {
+  for (let i = 1; i <= maxIterations; i++) {
     emit({ type: "iteration_start", iteration: i, prompt: currentPrompt });
 
-    emit({ type: "generating", iteration: i });
+    emit({ type: "generating", iteration: i, prompt: currentPrompt });
     const videoUrl = await generateVideo(currentPrompt);
 
-    emit({ type: "evaluating", iteration: i, videoUrl });
+    emit({ type: "evaluating", iteration: i, videoUrl, prompt: currentPrompt });
     const scores = await evaluateVideo(videoUrl, originalPrompt);
 
     const iteration: IterationResult = {
@@ -30,9 +41,9 @@ export async function runSelfHealingPipeline(
     };
     allIterations.push(iteration);
 
-    emit({ type: "iteration_done", iteration: i, videoUrl, scores });
+    emit({ type: "iteration_done", iteration: i, videoUrl, scores, prompt: currentPrompt });
 
-    if (scores.overall >= PASS_THRESHOLD || i === MAX_ITERATIONS) {
+    if (scores.overall >= threshold || i === maxIterations) {
       const best = allIterations.reduce((a, b) =>
         a.scores.overall >= b.scores.overall ? a : b
       );
@@ -40,9 +51,10 @@ export async function runSelfHealingPipeline(
       return;
     }
 
-    emit({ type: "healing", iteration: i, scores });
-    const repairedPrompt = await repairPrompt(currentPrompt, scores);
+    // Heal: emit before + after so UI can show what changed
+    emit({ type: "healing", iteration: i, scores, oldPrompt: currentPrompt });
+    const repairedPrompt = await repairPrompt(currentPrompt, scores, userRemarks);
     currentPrompt = repairedPrompt;
-    emit({ type: "healing", iteration: i, repairedPrompt });
+    emit({ type: "healing", iteration: i, repairedPrompt, oldPrompt: allIterations[i - 1].prompt });
   }
 }
