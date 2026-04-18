@@ -1,13 +1,16 @@
 /**
  * Supabase client helpers.
  *
- * createClient()             — browser client for Client Components / auth flows
+ * createClient()               — browser client for Client Components / auth flows
  * createServerSupabaseClient() — server client for Route Handlers / Server Components
- * createAdminClient()        — service-role client, server-only, never expose to browser
+ * createAdminClient()          — service-role client, server-only
+ *
+ * IMPORTANT: cookies() is imported lazily inside each server function so this
+ * module is safe to import in Client Components without triggering the
+ * "next/headers is only available in Server Components" error.
  */
 
 import { createBrowserClient, createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!;
 const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
@@ -19,9 +22,11 @@ export function createClient() {
 
 /**
  * Use in Server Components, Route Handlers, and Server Actions.
- * Reads/writes cookies so the session is shared across the request.
+ * Cookies imported lazily — safe to tree-shake in client bundles.
  */
 export async function createServerSupabaseClient() {
+  // Dynamic import keeps `next/headers` out of the client bundle
+  const { cookies } = await import("next/headers");
   const cookieStore = await cookies();
 
   return createServerClient(supabaseUrl, supabaseAnonKey, {
@@ -35,7 +40,7 @@ export async function createServerSupabaseClient() {
             cookieStore.set(name, value, options)
           );
         } catch {
-          // setAll may fail in Server Components — middleware handles session refresh.
+          // May fail in Server Components — middleware handles session refresh.
         }
       },
     },
@@ -44,7 +49,6 @@ export async function createServerSupabaseClient() {
 
 /** Admin client using service role key. Never call from the browser. */
 export function createAdminClient() {
-  // Dynamic import avoids bundling the service key into client bundles.
   // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { createClient: sb } = require("@supabase/supabase-js");
   return sb(supabaseUrl, process.env.SUPABASE_SERVICE_ROLE_KEY!, {
