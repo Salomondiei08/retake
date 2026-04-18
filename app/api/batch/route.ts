@@ -1,12 +1,12 @@
 import { type NextRequest } from "next/server";
 import { runSelfHealingPipeline } from "@/lib/pipeline";
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession } from "@/lib/auth";
+import { createServerSupabaseClient } from "@/lib/supabase";
 import type { PipelineEvent, BatchEvent, BatchPromptResult, EvaluationResult } from "@/lib/types";
 
 export const maxDuration = 300;
 
-const CONCURRENCY = 2; // run N prompts in parallel
+const CONCURRENCY = 2;
 
 async function runPromptWithCollection(
   index: number,
@@ -18,7 +18,6 @@ async function runPromptWithCollection(
 
   const emit = (event: PipelineEvent) => {
     onEvent({ type: "prompt_progress", index, prompt, event });
-
     if (event.type === "iteration_done" && event.videoUrl && event.scores && event.iteration != null) {
       iterations.push({
         iteration: event.iteration,
@@ -32,11 +31,9 @@ async function runPromptWithCollection(
 
   try {
     await runSelfHealingPipeline(prompt, emit, { maxIterations });
-
     const best = iterations.length > 0
       ? iterations.reduce((a, b) => b.scores.overall > a.scores.overall ? b : a)
       : null;
-
     return {
       index,
       prompt,
@@ -46,8 +43,7 @@ async function runPromptWithCollection(
     };
   } catch (err) {
     return {
-      index,
-      prompt,
+      index, prompt,
       bestIteration: null,
       allIterations: [],
       passed: false,
@@ -57,7 +53,7 @@ async function runPromptWithCollection(
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
+  const session = await getSession();
   const { prompts, maxIterations = 3 } = (await req.json()) as {
     prompts: string[];
     maxIterations?: number;
@@ -80,57 +76,49 @@ export async function POST(req: NextRequest) {
 
       const results: BatchPromptResult[] = new Array(cleanPrompts.length);
       const queue = cleanPrompts.map((prompt, index) => ({ prompt, index }));
-      const inFlight = new Set<number>();
 
       const runNext = async () => {
         const item = queue.shift();
         if (!item) return;
         const { prompt, index } = item;
-        inFlight.add(index);
         send({ type: "prompt_start", index, prompt, total: cleanPrompts.length });
 
         const result = await runPromptWithCollection(index, prompt, maxIterations, send);
         results[index] = result;
-        inFlight.delete(index);
         send({ type: "prompt_done", index, prompt, result });
 
         // Save to DB if authenticated
         if (session?.user?.id && result.bestIteration) {
           try {
-            const gen = await db.generation.create({
-              data: {
-                userId: session.user.id,
-                prompt,
-                status: "done",
-                bestScore: result.bestIteration.scores.overall,
-              },
-            });
-            for (const it of result.allIterations) {
-              await db.iteration.create({
-                data: {
-                  generationId: gen.id,
-                  iterationNum: it.iteration,
+            const supabase = await createServerSupabaseClient();
+            const { data: gen } = await supabase
+              .from("generations")
+              .insert({ user_id: session.user.id, prompt, status: "done", best_score: result.bestIteration.scores.overall })
+              .select()
+              .single();
+            if (gen) {
+              for (const it of result.allIterations) {
+                await supabase.from("iterations").insert({
+                  generation_id: gen.id,
+                  iteration_num: it.iteration,
                   prompt: it.prompt,
-                  videoUrl: it.videoUrl,
-                  scores: JSON.parse(JSON.stringify(it.scores)),
+                  video_url: it.videoUrl,
+                  scores: it.scores,
                   healed: it.healed,
                   accepted: it.iteration === result.bestIteration?.iteration,
-                },
-              });
+                });
+              }
             }
           } catch { /* don't block SSE on DB errors */ }
         }
 
-        // Keep concurrency slot filled
         await runNext();
       };
 
-      // Start N concurrent runners
       const runners: Promise<void>[] = [];
       for (let i = 0; i < Math.min(CONCURRENCY, cleanPrompts.length); i++) {
         runners.push(runNext());
       }
-
       await Promise.all(runners);
 
       send({ type: "batch_done", results });
@@ -139,10 +127,6 @@ export async function POST(req: NextRequest) {
   });
 
   return new Response(stream, {
-    headers: {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      Connection: "keep-alive",
-    },
+    headers: { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", Connection: "keep-alive" },
   });
 }

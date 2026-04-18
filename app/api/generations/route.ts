@@ -1,31 +1,29 @@
 import { NextRequest, NextResponse } from "next/server";
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession } from "@/lib/auth";
+import { createServerSupabaseClient } from "@/lib/supabase";
 
 // GET /api/generations — list user's generation history
 export async function GET() {
-  const session = await auth();
+  const session = await getSession();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const generations = await db.generation.findMany({
-    where: { userId: session.user.id },
-    orderBy: { createdAt: "desc" },
-    include: {
-      iterations: {
-        orderBy: { iterationNum: "asc" },
-      },
-    },
-    take: 50,
-  });
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("generations")
+    .select("*, iterations(*)")
+    .eq("user_id", session.user.id)
+    .order("created_at", { ascending: false })
+    .limit(50);
 
-  return NextResponse.json(generations);
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data);
 }
 
 // POST /api/generations — create a new generation record
 export async function POST(req: NextRequest) {
-  const session = await auth();
+  const session = await getSession();
   if (!session?.user?.id) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
@@ -35,9 +33,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "prompt required" }, { status: 400 });
   }
 
-  const generation = await db.generation.create({
-    data: { userId: session.user.id, prompt, status: "running" },
-  });
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await supabase
+    .from("generations")
+    .insert({ user_id: session.user.id, prompt, status: "running" })
+    .select()
+    .single();
 
-  return NextResponse.json(generation, { status: 201 });
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+  return NextResponse.json(data, { status: 201 });
 }

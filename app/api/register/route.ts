@@ -1,6 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { db } from "@/lib/db";
-import bcrypt from "bcryptjs";
+import { createAdminClient } from "@/lib/supabase";
 import { z } from "zod";
 
 const registerSchema = z.object({
@@ -23,22 +22,23 @@ export async function POST(req: NextRequest) {
 
     const { name, email, password } = parsed.data;
 
-    const existing = await db.user.findUnique({ where: { email } });
-    if (existing) {
-      return NextResponse.json(
-        { error: "An account with this email already exists" },
-        { status: 409 }
-      );
-    }
-
-    const hashedPassword = await bcrypt.hash(password, 12);
-
-    const user = await db.user.create({
-      data: { name, email, password: hashedPassword },
-      select: { id: true, email: true, name: true },
+    const admin = createAdminClient();
+    const { data, error } = await admin.auth.admin.createUser({
+      email,
+      password,
+      user_metadata: { name },
+      email_confirm: true, // auto-confirm so users can log in immediately
     });
 
-    return NextResponse.json(user, { status: 201 });
+    if (error) {
+      const status = error.message.includes("already registered") ? 409 : 400;
+      return NextResponse.json({ error: error.message }, { status });
+    }
+
+    return NextResponse.json(
+      { id: data.user.id, email: data.user.email },
+      { status: 201 }
+    );
   } catch (err) {
     console.error("Register error:", err);
     return NextResponse.json({ error: "Registration failed" }, { status: 500 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -23,38 +23,21 @@ export default function RegisterPage() {
     setLoading(true);
     setError(null);
 
-    try {
-      const res = await fetch("/api/register", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password }),
-      });
+    const supabase = createClient();
+    const { error: authError } = await supabase.auth.signUp({
+      email,
+      password,
+      options: { data: { name } },
+    });
 
-      const data = await res.json();
+    setLoading(false);
 
-      if (!res.ok) {
-        setError(data.error ?? "Registration failed");
-        setLoading(false);
-        return;
-      }
-
-      // Auto sign-in after successful registration
-      const result = await signIn("credentials", {
-        email,
-        password,
-        redirect: false,
-      });
-
-      if (result?.error) {
-        setError("Account created but sign-in failed. Please log in.");
-        router.push("/auth/login");
-      } else {
-        router.push("/dashboard");
-        router.refresh();
-      }
-    } catch {
-      setError("Something went wrong");
-      setLoading(false);
+    if (authError) {
+      setError(authError.message);
+    } else {
+      // signUp also signs the user in when email confirmation is disabled
+      router.push("/dashboard");
+      router.refresh();
     }
   };
 
@@ -74,9 +57,7 @@ export default function RegisterPage() {
         <div className="rounded-2xl border border-border bg-card p-7 space-y-6">
           <div>
             <h1 className="text-xl font-bold">Create your account</h1>
-            <p className="text-sm text-muted-foreground mt-1">
-              Start generating and healing videos
-            </p>
+            <p className="text-sm text-muted-foreground mt-1">Start generating and healing videos</p>
           </div>
 
           {error && (

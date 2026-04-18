@@ -1,24 +1,34 @@
 import type { Metadata } from "next";
-import { Plus_Jakarta_Sans, JetBrains_Mono } from "next/font/google";
+import { Inter_Tight, JetBrains_Mono, Instrument_Serif } from "next/font/google";
 import { ThemeProvider } from "@/components/theme-provider";
 import "./globals.css";
 
-const jakarta = Plus_Jakarta_Sans({
+/** Primary UI font — clean, readable, dev-tool energy */
+const interTight = Inter_Tight({
   variable: "--font-sans",
   subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
+  weight: ["300", "400", "500", "600", "700"],
 });
 
+/** Monospace — scores, labels, prompts, code */
 const jetbrainsMono = JetBrains_Mono({
-  variable: "--font-geist-mono",
+  variable: "--font-mono",
   subsets: ["latin"],
-  weight: ["400", "500"],
+  weight: ["400", "500", "600"],
+});
+
+/** Display — hero and large editorial headings */
+const instrumentSerif = Instrument_Serif({
+  variable: "--font-display",
+  subsets: ["latin"],
+  weight: "400",
+  style: ["normal", "italic"],
 });
 
 export const metadata: Metadata = {
-  title: "SeedTrace — Self-Healing Video CI/CD",
+  title: "Retake — Stop guessing. Start retaking.",
   description:
-    "Evaluate and auto-repair AI video generation prompts using Seedance 2.0 and Seed 2.0",
+    "Self-healing AI video generation. Generate, score, and auto-repair prompts using Seedance 2.0 and Seed 2.0.",
 };
 
 export default function RootLayout({
@@ -30,9 +40,9 @@ export default function RootLayout({
     <html
       lang="en"
       suppressHydrationWarning
-      className={`${jakarta.variable} ${jetbrainsMono.variable} h-full antialiased`}
+      className={`${interTight.variable} ${jetbrainsMono.variable} ${instrumentSerif.variable} h-full`}
     >
-      <body className="min-h-full flex flex-col bg-background text-foreground">
+      <body className="min-h-full flex flex-col bg-background text-foreground antialiased">
         <ThemeProvider
           attribute="class"
           defaultTheme="dark"

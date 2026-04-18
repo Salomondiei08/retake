@@ -1,13 +1,13 @@
 import { type NextRequest } from "next/server";
 import { runSelfHealingPipeline } from "@/lib/pipeline";
-import { auth } from "@/lib/auth";
-import { db } from "@/lib/db";
+import { getSession } from "@/lib/auth";
+import { createServerSupabaseClient } from "@/lib/supabase";
 import type { PipelineEvent, EvaluationResult } from "@/lib/types";
 
 export const maxDuration = 300;
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
+  const session = await getSession();
   const { prompt, userRemarks, maxIterations } = (await req.json()) as {
     prompt: string;
     userRemarks?: string;
@@ -20,10 +20,13 @@ export async function POST(req: NextRequest) {
 
   let generationId: string | null = null;
   if (session?.user?.id) {
-    const gen = await db.generation.create({
-      data: { userId: session.user.id, prompt: prompt.trim(), status: "running" },
-    });
-    generationId = gen.id;
+    const supabase = await createServerSupabaseClient();
+    const { data: gen } = await supabase
+      .from("generations")
+      .insert({ user_id: session.user.id, prompt: prompt.trim(), status: "running" })
+      .select()
+      .single();
+    generationId = gen?.id ?? null;
   }
 
   const stream = new ReadableStream({
@@ -63,32 +66,32 @@ export async function POST(req: NextRequest) {
         await runSelfHealingPipeline(prompt.trim(), wrappedEmit, { maxIterations, userRemarks });
 
         if (generationId && collected.length > 0) {
+          const supabase = await createServerSupabaseClient();
           const best = collected.reduce((a, b) =>
             b.scores.overall > a.scores.overall ? b : a
           );
-          await db.generation.update({
-            where: { id: generationId },
-            data: { status: "done", bestScore: best.scores.overall },
-          });
-          // createMany with JSON field — serialize via JSON round-trip to satisfy Prisma types
+          await supabase
+            .from("generations")
+            .update({ status: "done", best_score: best.scores.overall })
+            .eq("id", generationId);
+
           for (const it of collected) {
-            await db.iteration.create({
-              data: {
-                generationId: generationId!,
-                iterationNum: it.iteration,
-                prompt: it.prompt,
-                videoUrl: it.videoUrl,
-                scores: JSON.parse(JSON.stringify(it.scores)),
-                healed: it.healed,
-                accepted: true,
-              },
+            await supabase.from("iterations").insert({
+              generation_id: generationId,
+              iteration_num: it.iteration,
+              prompt: it.prompt,
+              video_url: it.videoUrl,
+              scores: it.scores,
+              healed: it.healed,
+              accepted: true,
             });
           }
         }
       } catch (err) {
         send({ type: "error", message: err instanceof Error ? err.message : "Unknown error" });
         if (generationId) {
-          await db.generation.update({ where: { id: generationId }, data: { status: "error" } }).catch(() => {});
+          const supabase = await createServerSupabaseClient();
+          await supabase.from("generations").update({ status: "error" }).eq("id", generationId);
         }
       } finally {
         controller.close();

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { createClient } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -24,15 +24,12 @@ export default function LoginPage() {
     setLoading(true);
     setError(null);
 
-    const result = await signIn("credentials", {
-      email,
-      password,
-      redirect: false,
-    });
+    const supabase = createClient();
+    const { error: authError } = await supabase.auth.signInWithPassword({ email, password });
 
     setLoading(false);
 
-    if (result?.error) {
+    if (authError) {
       setError("Invalid email or password");
     } else {
       router.push(callbackUrl);
@@ -112,10 +109,7 @@ export default function LoginPage() {
 
           <p className="text-sm text-center text-muted-foreground">
             No account yet?{" "}
-            <Link
-              href="/auth/register"
-              className="text-primary font-semibold hover:underline"
-            >
+            <Link href="/auth/register" className="text-primary font-semibold hover:underline">
               Create one
             </Link>
           </p>
