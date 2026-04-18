@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Suspense, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
@@ -19,7 +19,8 @@ function GoogleIcon() {
   );
 }
 
-export default function LoginPage() {
+/** Inner component — isolated so useSearchParams is inside a Suspense boundary */
+function LoginForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
@@ -59,9 +60,101 @@ export default function LoginPage() {
         redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(callbackUrl)}`,
       },
     });
-    // Browser will redirect — no need to setGoogleLoading(false)
   };
 
+  return (
+    <div className="rounded-2xl border border-border bg-card p-7 space-y-5">
+      <div>
+        <h1 className="text-xl font-bold">Welcome back</h1>
+        <p className="text-sm text-muted-foreground mt-1">Sign in to your account</p>
+      </div>
+
+      {/* Google */}
+      <Button
+        type="button"
+        variant="outline"
+        onClick={handleGoogle}
+        disabled={googleLoading || loading}
+        className="w-full h-11 rounded-xl border-border font-semibold text-sm gap-2.5"
+      >
+        {googleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
+        Continue with Google
+      </Button>
+
+      {/* Divider */}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 h-px bg-border" />
+        <span className="text-xs text-muted-foreground font-mono">or</span>
+        <div className="flex-1 h-px bg-border" />
+      </div>
+
+      {error && (
+        <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/25">
+          <p className="text-sm text-destructive">{error}</p>
+        </div>
+      )}
+
+      <form onSubmit={handleSubmit} className="space-y-4">
+        <div className="space-y-2">
+          <label className="text-sm font-semibold text-foreground/80">Email</label>
+          <Input
+            type="email"
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="you@example.com"
+            required
+            disabled={loading || googleLoading}
+            className="h-11 bg-background border-border focus:border-primary/50 text-sm"
+          />
+        </div>
+
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <label className="text-sm font-semibold text-foreground/80">Password</label>
+            <Link href="/auth/forgot-password" className="text-xs text-primary hover:underline">
+              Forgot password?
+            </Link>
+          </div>
+          <div className="relative">
+            <Input
+              type={showPassword ? "text" : "password"}
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="••••••••"
+              required
+              disabled={loading || googleLoading}
+              className="h-11 bg-background border-border focus:border-primary/50 text-sm pr-10"
+            />
+            <button
+              type="button"
+              onClick={() => setShowPassword(!showPassword)}
+              className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
+            >
+              {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+            </button>
+          </div>
+        </div>
+
+        <Button
+          type="submit"
+          disabled={loading || googleLoading || !email || !password}
+          className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl"
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
+        </Button>
+      </form>
+
+      <p className="text-sm text-center text-muted-foreground">
+        No account yet?{" "}
+        <Link href="/auth/register" className="text-primary font-semibold hover:underline">
+          Create one
+        </Link>
+      </p>
+    </div>
+  );
+}
+
+export default function LoginPage() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-sm">
@@ -73,96 +166,10 @@ export default function LoginPage() {
             <p style={{ fontFamily: "var(--font-mono)", fontSize: 10, color: "var(--fg-3)", marginTop: 2 }}>AI Video DevTools</p>
           </div>
         </div>
-
-        {/* Card */}
-        <div className="rounded-2xl border border-border bg-card p-7 space-y-5">
-          <div>
-            <h1 className="text-xl font-bold">Welcome back</h1>
-            <p className="text-sm text-muted-foreground mt-1">Sign in to your account</p>
-          </div>
-
-          {/* Google */}
-          <Button
-            type="button"
-            variant="outline"
-            onClick={handleGoogle}
-            disabled={googleLoading || loading}
-            className="w-full h-11 rounded-xl border-border font-semibold text-sm gap-2.5"
-          >
-            {googleLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <GoogleIcon />}
-            Continue with Google
-          </Button>
-
-          {/* Divider */}
-          <div className="flex items-center gap-3">
-            <div className="flex-1 h-px bg-border" />
-            <span className="text-xs text-muted-foreground font-mono">or</span>
-            <div className="flex-1 h-px bg-border" />
-          </div>
-
-          {error && (
-            <div className="p-3 rounded-xl bg-destructive/10 border border-destructive/25">
-              <p className="text-sm text-destructive">{error}</p>
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="space-y-2">
-              <label className="text-sm font-semibold text-foreground/80">Email</label>
-              <Input
-                type="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                placeholder="you@example.com"
-                required
-                disabled={loading || googleLoading}
-                className="h-11 bg-background border-border focus:border-primary/50 text-sm"
-              />
-            </div>
-
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-sm font-semibold text-foreground/80">Password</label>
-                <Link href="/auth/forgot-password" className="text-xs text-primary hover:underline">
-                  Forgot password?
-                </Link>
-              </div>
-              <div className="relative">
-                <Input
-                  type={showPassword ? "text" : "password"}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  required
-                  disabled={loading || googleLoading}
-                  className="h-11 bg-background border-border focus:border-primary/50 text-sm pr-10"
-                />
-                <button
-                  type="button"
-                  onClick={() => setShowPassword(!showPassword)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-foreground transition-colors"
-                >
-                  {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                </button>
-              </div>
-            </div>
-
-            <Button
-              type="submit"
-              disabled={loading || googleLoading || !email || !password}
-              className="w-full h-11 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl"
-            >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Sign in"}
-            </Button>
-          </form>
-
-          <p className="text-sm text-center text-muted-foreground">
-            No account yet?{" "}
-            <Link href="/auth/register" className="text-primary font-semibold hover:underline">
-              Create one
-            </Link>
-          </p>
-        </div>
+        {/* Suspense required because useSearchParams triggers CSR bailout in prod */}
+        <Suspense fallback={<div className="rounded-2xl border border-border bg-card p-7 h-64 animate-pulse" />}>
+          <LoginForm />
+        </Suspense>
       </div>
     </div>
   );
