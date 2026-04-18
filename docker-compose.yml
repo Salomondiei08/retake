@@ -1,0 +1,48 @@
+version: "3.9"
+
+# Run just the DB for local dev:
+#   docker compose up db
+#
+# Run the full stack (DB + app):
+#   docker compose up
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: seedtrace
+      POSTGRES_USER: seedtrace
+      POSTGRES_PASSWORD: seedtrace_dev
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U seedtrace -d seedtrace"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://seedtrace:seedtrace_dev@db:5432/seedtrace?schema=public
+      AUTH_SECRET: ${AUTH_SECRET:-change-me-in-production}
+      AUTH_URL: http://localhost:3000
+      BYTEPLUS_API_KEY: ${BYTEPLUS_API_KEY}
+      BYTEPLUS_API_BASE: ${BYTEPLUS_API_BASE:-https://ark.ap-southeast.bytepluses.com/api/v3}
+      SEEDANCE_MODEL: ${SEEDANCE_MODEL:-dreamina-seedance-2-0-260128}
+      SEED2_VISION_MODEL: ${SEED2_VISION_MODEL:-seed-2-0-pro-260328}
+      SEED2_TEXT_MODEL: ${SEED2_TEXT_MODEL:-seed-2-0-pro-260328}
+      SCORE_THRESHOLD: ${SCORE_THRESHOLD:-75}
+      NODE_ENV: production
+
+volumes:
+  postgres_data:

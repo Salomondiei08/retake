@@ -40,9 +40,37 @@ type Phase =
       iteration: number;
       videoUrl: string;
       scores: EvaluationResult;
+      genId?: string;
     }
   | { tag: "healing"; prompt: string; iteration: number }
   | { tag: "done"; bestIteration: IterationResult };
+
+async function saveIteration(
+  generationId: string,
+  iter: IterationResult & { userRemarks?: string; accepted?: boolean }
+) {
+  await fetch(`/api/generations/${generationId}/iterations`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      iterationNum: iter.iteration,
+      prompt: iter.prompt,
+      videoUrl: iter.videoUrl,
+      scores: iter.scores,
+      healed: iter.healed,
+      userRemarks: iter.userRemarks ?? null,
+      accepted: iter.accepted ?? false,
+    }),
+  });
+}
+
+async function finalizeGeneration(generationId: string, bestScore: number) {
+  await fetch(`/api/generations/${generationId}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ status: "done", bestScore }),
+  });
+}
 
 export default function DashboardPage() {
   const [prompt, setPrompt] = useState("");
@@ -58,19 +86,19 @@ export default function DashboardPage() {
     setError(null);
   };
 
-  const runGenerate = useCallback(async (currentPrompt: string, iteration: number) => {
+  const runGenerate = useCallback(async (currentPrompt: string, iteration: number, genId?: string) => {
     setError(null);
     setPhase({ tag: "generating", prompt: currentPrompt, iteration });
 
     try {
-      const genRes = await fetch("/api/generate", {
+      const videoRes = await fetch("/api/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ prompt: currentPrompt }),
       });
-      const genData = await genRes.json();
-      if (!genRes.ok) throw new Error(genData.error ?? "Generation failed");
-      const videoUrl: string = genData.videoUrl;
+      const videoData = await videoRes.json();
+      if (!videoRes.ok) throw new Error(videoData.error ?? "Generation failed");
+      const videoUrl: string = videoData.videoUrl;
 
       setPhase({ tag: "evaluating", prompt: currentPrompt, iteration, videoUrl });
 
@@ -82,15 +110,16 @@ export default function DashboardPage() {
       const evalData = await evalRes.json();
       if (!evalRes.ok) throw new Error(evalData.error ?? "Evaluation failed");
 
-      setPhase({ tag: "evaluated", prompt: currentPrompt, iteration, videoUrl, scores: evalData });
+      setPhase({ tag: "evaluated", prompt: currentPrompt, iteration, videoUrl, scores: evalData, genId });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       setPhase({ tag: "idle" });
     }
   }, []);
 
-  const handleAccept = useCallback(() => {
+  const handleAccept = useCallback(async () => {
     if (phase.tag !== "evaluated") return;
+    const { genId } = phase;
     const iter: IterationResult = {
       iteration: phase.iteration,
       prompt: phase.prompt,
@@ -102,11 +131,17 @@ export default function DashboardPage() {
     const best = all.reduce((a, b) => (b.scores.overall > a.scores.overall ? b : a));
     setIterations(all);
     setPhase({ tag: "done", bestIteration: best });
+
+    // Persist to DB (fire-and-forget)
+    if (genId) {
+      saveIteration(genId, { ...iter, accepted: true }).catch(console.error);
+      finalizeGeneration(genId, best.scores.overall).catch(console.error);
+    }
   }, [phase, iterations]);
 
   const handleHeal = useCallback(async () => {
     if (phase.tag !== "evaluated") return;
-    const { prompt: currentPrompt, iteration, videoUrl, scores } = phase;
+    const { prompt: currentPrompt, iteration, videoUrl, scores, genId } = phase;
 
     const iter: IterationResult = {
       iteration,
@@ -118,9 +153,15 @@ export default function DashboardPage() {
     const newIterations = [...iterations, iter];
     setIterations(newIterations);
 
+    // Save this iteration to DB before healing
+    if (genId) {
+      saveIteration(genId, { ...iter, userRemarks, accepted: false }).catch(console.error);
+    }
+
     if (iteration >= 3) {
       const best = newIterations.reduce((a, b) => (b.scores.overall > a.scores.overall ? b : a));
       setPhase({ tag: "done", bestIteration: best });
+      if (genId) finalizeGeneration(genId, best.scores.overall).catch(console.error);
       return;
     }
 
@@ -137,7 +178,7 @@ export default function DashboardPage() {
       if (!healRes.ok) throw new Error(healData.error ?? "Heal failed");
 
       setUserRemarks("");
-      await runGenerate(healData.improvedPrompt, iteration + 1);
+      await runGenerate(healData.improvedPrompt, iteration + 1, genId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
       setPhase({ tag: "idle" });
@@ -207,7 +248,21 @@ export default function DashboardPage() {
           <div className="p-4 border-t border-border space-y-2">
             {isIdle ? (
               <Button
-                onClick={() => runGenerate(prompt, 1)}
+                onClick={async () => {
+                  // Create a generation record first, then run
+                  try {
+                    const res = await fetch("/api/generations", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ prompt }),
+                    });
+                    const data = await res.json();
+                    const genId: string | undefined = res.ok ? data.id : undefined;
+                    await runGenerate(prompt, 1, genId);
+                  } catch {
+                    await runGenerate(prompt, 1);
+                  }
+                }}
                 disabled={!prompt.trim()}
                 className="w-full gap-2 bg-primary hover:bg-primary/90 text-primary-foreground font-bold text-sm h-11 disabled:opacity-40 rounded-xl"
               >
