@@ -105,7 +105,8 @@ repair_suggestions: actionable prompt improvements that would fix each issue (ma
 
 export async function repairPrompt(
   originalPrompt: string,
-  result: EvaluationResult
+  result: EvaluationResult,
+  userRemarks = ""
 ): Promise<string> {
   const systemPrompt = `You are a video generation prompt engineer.
 Your task is to rewrite a prompt to fix specific quality issues identified in the generated video.
@@ -129,7 +130,7 @@ Repair suggestions:
 ${result.repair_suggestions.map((s, i) => `${i + 1}. ${s}`).join("\n")}
 
 Scores: adherence=${result.prompt_adherence}, temporal=${result.temporal_consistency}, physical=${result.physical_logic}
-
+${userRemarks ? `\nUser additional notes: ${userRemarks}` : ""}
 Write an improved prompt that addresses these issues:`,
     },
   ];
