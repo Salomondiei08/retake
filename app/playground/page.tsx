@@ -116,7 +116,7 @@ export default function PlaygroundPage() {
       <header className="border-b border-border px-4 py-3 flex items-center justify-between">
         <div className="flex items-center gap-3">
           <Zap className="h-5 w-5 text-primary" />
-          <span className="font-semibold text-sm">SeedTrace</span>
+          <span className="font-semibold text-sm">Retake</span>
         </div>
         <nav className="flex items-center gap-4 text-sm">
           <span className="text-primary font-medium">Playground</span>

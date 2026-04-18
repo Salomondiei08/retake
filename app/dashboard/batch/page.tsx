@@ -458,7 +458,7 @@ export default function BatchPage() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `seedtrace-batch-${Date.now()}.csv`;
+    a.download = `retake-batch-${Date.now()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   }, [cards]);

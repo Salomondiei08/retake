@@ -466,7 +466,7 @@ function EmptyState({ autonomous }: { autonomous?: boolean }) {
       <p className="text-sm text-muted-foreground max-w-xs leading-relaxed">
         {autonomous
           ? "Enter a prompt, optionally add hints, and hit Run. Seed 2.0 will generate, score, and heal automatically until the quality threshold is met — no input needed."
-          : "Enter a prompt and hit Generate. SeedTrace will produce the video, score it, then pause so you can review and decide what happens next."}
+          : "Enter a prompt and hit Generate. Retake will produce the video, score it, then pause so you can review and decide what happens next."}
       </p>
     </div>
   );
